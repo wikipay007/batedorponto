@@ -1,11 +1,12 @@
 // ====== COLE AQUI A CONFIG DO SEU PROJETO FIREBASE ======
 // Sem apiKey o app funciona em modo local (salva só neste navegador).
-const FB = { apiKey:"AIzaSyCjKyRLUf2rs56mm8sA75rkls4hEa2fOyY", authDomain:"batedorponto.firebaseapp.com", projectId:"batedorponto", appId:"1:537488362989:web:8b1e2a14e5c28d1492ebe4" };
+// Inclua storageBucket, copiado da configuração do app Web no Firebase, para habilitar fotos.
+const FB = { apiKey:"AIzaSyCjKyRLUf2rs56mm8sA75rkls4hEa2fOyY", authDomain:"batedorponto.firebaseapp.com", projectId:"batedorponto", storageBucket:"batedorponto.firebasestorage.app", appId:"1:537488362989:web:8b1e2a14e5c28d1492ebe4" };
 // ========================================================
 
 const $ = s => document.querySelector(s);
 const useFB = !!FB.apiKey && typeof firebase !== 'undefined';
-let db, auth, uid, days = {}, loaded = {}, sel, period, started = false;
+let db, auth, storage, storageError, uid, days = {}, loaded = {}, sel, period, started = false;
 let meta = +localStorage.meta || 8;
 
 /* ---------- utilidades ---------- */
@@ -90,9 +91,9 @@ async function loadPeriod(start){
   }catch(e){ loaded[start] = 0; status('erro ao carregar'); console.error(e); }
 }
 async function save(k){
-  if(!useFB){ localStorage.ponto = JSON.stringify(days); status('salvo neste navegador'); return; }
-  try{ status('salvando…'); await col().doc(k).set(days[k]); status('salvo'); }
-  catch(e){ status('erro ao salvar'); console.error(e); }
+  if(!useFB){ localStorage.ponto = JSON.stringify(days); status('salvo neste navegador'); return true; }
+  try{ status('salvando…'); await col().doc(k).set(days[k]); status('salvo'); return true; }
+  catch(e){ status('erro ao salvar'); console.error(e); return false; }
 }
 
 /* ---------- render ---------- */
@@ -112,8 +113,24 @@ function rSettings(){
   $('#day-meta').value = goalHours(d);
 }
 function rFields(){
-  const d = days[sel] || {};
-  document.querySelectorAll('#f input').forEach(i => i.value = d[i.dataset.k] || '');
+  const d = days[sel] || {}, marks = [['in','Entrada'],['lunch','Saída almoço'],['back','Volta'],['out','Saída']];
+  $('#f').innerHTML = marks.map(([k,label]) => {
+    const photo = d.photos && d.photos[k], status = storageError
+      ? 'Firebase Storage indisponível. Confira a configuração storageBucket do Firebase.'
+      : useFB && storage ? '' : 'Envio de fotos requer Firebase Storage configurado.';
+    return `<div class="fld">
+      <label for="f_${k}">${label}</label>
+      <input id="f_${k}" type="time" data-k="${k}" value="${d[k]||''}">
+      <button data-now="${k}">Agora</button>
+      <div class="mark-photo">
+        ${photo ? `<img class="photo-preview" src="${esc(photo.url)}" alt="Foto da marcação: ${label}">` : ''}
+        <label class="photo-pick" for="photo-${k}">${photo ? 'Trocar foto' : 'Adicionar foto'}</label>
+        <input class="photo-file" id="photo-${k}" type="file" accept="image/*" capture="environment" data-photo="${k}">
+        ${photo ? '<button class="photo-remove" type="button" data-photo-remove="' + k + '">Remover foto</button>' : ''}
+        <p class="photo-status mut" role="status" aria-live="polite">${status}</p>
+      </div>
+    </div>`;
+  }).join('');
 }
 function rBrk(){
   const b = (days[sel] && days[sel].breaks) || [];
@@ -123,6 +140,85 @@ function rBrk(){
     <button class="x" aria-label="Remover">×</button>
     <input class="n" data-f="n" placeholder="Motivo (opcional)" value="${esc(x.n)}">
     <button class="a" data-act="end" title="Encerrar agora">Fim</button></div>`).join('');
+}
+async function uploadPhoto(input, mark){
+  const file = input.files[0], card = input.closest('.mark-photo'), status = card.querySelector('.photo-status');
+  if(!file) return;
+  if(!storage){ status.textContent = 'Configure o Firebase Storage para enviar fotos.'; input.value = ''; return; }
+  if(!file.type.startsWith('image/')){ status.textContent = 'Selecione um arquivo de imagem.'; input.value = ''; return; }
+  if(file.size > 10 * 1024 * 1024){ status.textContent = 'A imagem deve ter no máximo 10 MB.'; input.value = ''; return; }
+
+  const key = sel, day = days[key] || { breaks: [] };
+  const photos = day.photos || {}, previous = photos[mark];
+  const path = `users/${uid}/ponto/${key}/${mark}/${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+  const ref = storage.ref(path);
+  let uploaded = false, committed = false;
+  status.textContent = 'Enviando foto…';
+  input.disabled = true;
+  try{
+    await ref.put(file, { contentType: file.type });
+    uploaded = true;
+    const next = { url: await ref.getDownloadURL(), path, name: file.name };
+    day.photos = { ...photos, [mark]: next };
+    days[key] = day;
+    if(!await save(key)){
+      if(previous) day.photos[mark] = previous;
+      else delete day.photos[mark];
+      try{ await ref.delete(); }
+      catch(error){ console.error('Não foi possível limpar a foto enviada sem referência:', error); }
+      uploaded = false;
+      if(card.isConnected) status.textContent = 'Não foi possível salvar a referência da foto no Firestore.';
+      return;
+    }
+    committed = true;
+    if(previous && previous.path){
+      try{ await storage.ref(previous.path).delete(); }
+      catch(error){ console.error('Não foi possível excluir a foto substituída:', error); }
+    }
+    if(sel === key){
+      rFields();
+      const updatedStatus = document.querySelector(`#f [data-photo="${mark}"]`)?.closest('.mark-photo')?.querySelector('.photo-status');
+      if(updatedStatus) updatedStatus.textContent = 'Foto salva.';
+    }
+  }catch(error){
+    if(uploaded && !committed){
+      try{ await ref.delete(); }
+      catch(cleanupError){ console.error('Não foi possível limpar a foto enviada sem referência:', cleanupError); }
+    }
+    status.textContent = 'Erro ao enviar a foto. Verifique as regras do Firebase Storage e tente novamente.';
+    console.error(error);
+  }finally{
+    input.disabled = false;
+    input.value = '';
+  }
+}
+async function removePhoto(event){
+  const button = event.target.closest('[data-photo-remove]');
+  if(!button) return;
+  const mark = button.dataset.photoRemove, key = sel, day = days[key];
+  const photo = day && day.photos && day.photos[mark];
+  if(!storage || !photo) return;
+  const card = button.closest('.mark-photo');
+  const status = card.querySelector('.photo-status');
+  status.textContent = 'Removendo foto…';
+  button.disabled = true;
+  delete day.photos[mark];
+  if(!await save(key)){
+    day.photos[mark] = photo;
+    if(card.isConnected) status.textContent = 'Não foi possível atualizar o registro no Firestore; a foto não foi removida.';
+    button.disabled = false;
+    return;
+  }
+  if(sel === key) rFields();
+  try{
+    await storage.ref(photo.path).delete();
+    const updatedStatus = sel === key && document.querySelector(`#f [data-k="${mark}"]`).closest('.fld').querySelector('.photo-status');
+    if(updatedStatus) updatedStatus.textContent = 'Foto removida.';
+  }catch(error){
+    console.error(error);
+    const updatedStatus = sel === key && document.querySelector(`#f [data-k="${mark}"]`).closest('.fld').querySelector('.photo-status');
+    if(updatedStatus) updatedStatus.textContent = 'A referência foi removida, mas não foi possível excluir a imagem do Storage.';
+  }
 }
 function rList(){
   const start = period, end = periodEnd(start), T = todayS();
@@ -155,9 +251,12 @@ async function setPeriod(delta){
 
 /* ---------- eventos ---------- */
 function build(){
-  const F = [['in','Entrada'],['lunch','Saída almoço'],['back','Volta'],['out','Saída']];
-  $('#f').innerHTML = F.map(([k,l]) => `<div class="fld"><label for="f_${k}">${l}</label><input id="f_${k}" type="time" data-k="${k}"><button data-now="${k}">Agora</button></div>`).join('');
   $('#f').addEventListener('change', e => {
+    const photoMark = e.target.dataset.photo;
+    if(photoMark){
+      uploadPhoto(e.target, photoMark);
+      return;
+    }
     const k = e.target.dataset.k; if(!k) return;
     const d = cur(); e.target.value ? d[k] = e.target.value : delete d[k];
     save(sel); rDraw(); rList();
@@ -177,6 +276,7 @@ function build(){
     else d.targetHours = value;
     save(sel); rAll();
   });
+  $('#f').addEventListener('click', removePhoto);
   $('#addb').onclick = () => { const d = cur(); (d.breaks = d.breaks || []).push({ s: nowS(), e: '', n: '' }); save(sel); rBrk(); };
   $('#brk').addEventListener('change', e => {
     const r = e.target.closest('.br'); if(!r || !e.target.dataset.f) return;
@@ -209,6 +309,10 @@ function init(){
 /* ---------- login ---------- */
 if(useFB){
   firebase.initializeApp(FB); auth = firebase.auth(); db = firebase.firestore();
+  if(typeof firebase.storage === 'function'){
+    try{ storage = firebase.storage(firebase.app(), `gs://${FB.storageBucket}`); }
+    catch(error){ storageError = error; console.error('Falha ao inicializar Firebase Storage:', error); }
+  }
   auth.onAuthStateChanged(u => {
     if(u){ uid = u.uid; $('#auth').hidden = true; init(); } else $('#auth').hidden = false;
   });
@@ -218,4 +322,10 @@ if(useFB){
   $('#out').onclick = () => auth.signOut().then(() => location.reload());
 } else {
   $('#out').hidden = true; init(); status('modo local');
+}
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(error => console.error('Falha ao registrar service worker:', error));
+  });
 }

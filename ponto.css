@@ -1,6 +1,12 @@
 :root{--bg:#000;--fg:#fff;--mut:#8c8c8c;--ln:#333}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--fg);font:15px/1.4 Archivo,"Helvetica Neue",Arial,sans-serif;font-variant-numeric:tabular-nums;padding:max(16px,env(safe-area-inset-top)) 16px max(32px,env(safe-area-inset-bottom))}
+#loading-screen{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:var(--bg);padding:24px}
+#loading-screen[hidden]{display:none}
+.loading-content{display:grid;justify-items:center;gap:16px;color:var(--fg)}
+.loading-spinner{width:40px;height:40px;border:3px solid var(--ln);border-top-color:var(--fg);border-radius:50%;animation:loading-spin .8s linear infinite}
+@keyframes loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.loading-spinner{animation:none;border-top-color:var(--ln)}}
 .wrap{max-width:760px;margin:0 auto;display:grid;gap:36px}
 header{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--fg);padding-bottom:10px}
 h1{font-size:34px;font-weight:800;letter-spacing:-.03em}
@@ -32,12 +38,21 @@ input:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 .empty{height:56px;display:grid;place-items:center;color:var(--mut)}
 .mark-photo{display:grid;gap:6px;margin-top:8px}
 .photo-preview{width:100%;max-height:180px;object-fit:contain;object-position:left;border:1px solid var(--ln)}
+.photo-preview[hidden]{display:none}
+.photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.photo-actions button{min-height:36px;padding:6px;border-color:var(--ln);font-size:12px}
 .photo-pick{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:38px;border:1px solid var(--ln);padding:8px;cursor:pointer;text-align:center;font-size:12px}
 .photo-pick:hover{background:var(--fg);color:var(--bg)}
 .photo-file{position:absolute;width:1px!important;height:1px;min-height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;clip-path:inset(50%)}
 .photo-file:focus-visible+.photo-pick{outline:2px solid var(--fg);outline-offset:2px}
 .photo-remove{width:100%;min-height:36px;padding:6px;border-color:var(--ln);font-size:12px}
 .photo-status{min-height:18px;font-size:11px!important}
+#photo-dialog{width:min(900px,90vw);max-width:none;max-height:90vh;margin:auto;padding:12px;background:var(--bg);color:var(--fg);border:1px solid var(--fg)}
+#photo-dialog::backdrop{background:rgba(0,0,0,.85)}
+.photo-dialog-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.photo-dialog-head h2{margin:0}
+.photo-dialog-head button{min-height:36px;padding:6px 12px}
+#photo-dialog-image{display:block;max-width:100%;max-height:75vh;margin:auto;object-fit:contain}
 /* campos */
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:22px 0}
 @media(min-width:620px){.grid{grid-template-columns:repeat(4,1fr)}}

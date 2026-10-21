@@ -6,10 +6,26 @@ const FB = { apiKey:"AIzaSyCjKyRLUf2rs56mm8sA75rkls4hEa2fOyY", authDomain:"bated
 
 const $ = s => document.querySelector(s);
 const useFB = !!FB.apiKey && typeof firebase !== 'undefined';
-let db, auth, storage, storageError, uid, days = {}, loaded = {}, sel, period, started = false;
+let db, auth, storage, storageError, uid, days = {}, loaded = {}, loadingPeriods = {}, sel, period, started = false;
+let startupLoading = true, loadingRequests = 0;
 let meta = +localStorage.meta || 8;
 
 /* ---------- utilidades ---------- */
+function updateLoadingScreen(){
+  $('#loading-screen').hidden = !startupLoading && loadingRequests === 0;
+}
+function finishStartupLoading(){
+  startupLoading = false;
+  updateLoadingScreen();
+}
+function showLoading(){
+  loadingRequests++;
+  updateLoadingScreen();
+}
+function hideLoading(){
+  loadingRequests--;
+  updateLoadingScreen();
+}
 const m = t => { const [a,b] = t.split(':'); return +a*60 + +b };
 const hm = n => String(Math.floor(n/60)%24).padStart(2,'0') + ':' + String(n%60).padStart(2,'0');
 const nowM = () => { const d = new Date(); return d.getHours()*60 + d.getMinutes() };
@@ -82,13 +98,24 @@ const col = () => db.collection('users').doc(uid).collection('ponto');
 function status(t){ $('#st').textContent = t; }
 async function loadPeriod(start){
   if(!useFB || loaded[start]) return;
-  loaded[start] = 1; status('carregando…');
+  if(loadingPeriods[start]) return loadingPeriods[start];
+  showLoading(); status('carregando…');
+  const request = (async () => {
+    try{
+      const D = firebase.firestore.FieldPath.documentId();
+      const s = await col().where(D,'>=',start).where(D,'<=',periodEnd(start)).get();
+      s.forEach(x => days[x.id] = x.data());
+      loaded[start] = 1;
+      status('');
+    }catch(e){ status('erro ao carregar'); console.error(e); }
+  })();
+  loadingPeriods[start] = request;
   try{
-    const D = firebase.firestore.FieldPath.documentId();
-    const s = await col().where(D,'>=',start).where(D,'<=',periodEnd(start)).get();
-    s.forEach(x => days[x.id] = x.data());
-    status('');
-  }catch(e){ loaded[start] = 0; status('erro ao carregar'); console.error(e); }
+    await request;
+  }finally{
+    delete loadingPeriods[start];
+    hideLoading();
+  }
 }
 async function save(k){
   if(!useFB){ localStorage.ponto = JSON.stringify(days); status('salvo neste navegador'); return true; }
@@ -123,7 +150,11 @@ function rFields(){
       <input id="f_${k}" type="time" data-k="${k}" value="${d[k]||''}">
       <button data-now="${k}">Agora</button>
       <div class="mark-photo">
-        ${photo ? `<img class="photo-preview" src="${esc(photo.url)}" alt="Foto da marcação: ${label}">` : ''}
+        ${photo ? `<img class="photo-preview" src="${esc(photo.url)}" alt="Foto da marcação: ${label}" hidden>
+        <div class="photo-actions">
+          <button type="button" data-photo-toggle="${k}" aria-expanded="false">Mostrar foto</button>
+          <button type="button" data-photo-open="${k}" data-photo-url="${esc(photo.url)}" data-photo-alt="Foto da marcação: ${label}">Abrir foto</button>
+        </div>` : ''}
         <label class="photo-pick" for="photo-${k}">${photo ? 'Trocar foto' : 'Adicionar foto'}</label>
         <input class="photo-file" id="photo-${k}" type="file" accept="image/*" capture="environment" data-photo="${k}">
         ${photo ? '<button class="photo-remove" type="button" data-photo-remove="' + k + '">Remover foto</button>' : ''}
@@ -262,9 +293,28 @@ function build(){
     save(sel); rDraw(); rList();
   });
   $('#f').addEventListener('click', e => {
+    const toggle = e.target.closest('[data-photo-toggle]');
+    if(toggle){
+      const preview = toggle.closest('.mark-photo').querySelector('.photo-preview');
+      preview.hidden = !preview.hidden;
+      toggle.textContent = preview.hidden ? 'Mostrar foto' : 'Ocultar foto';
+      toggle.setAttribute('aria-expanded', String(!preview.hidden));
+      return;
+    }
+    const open = e.target.closest('[data-photo-open]');
+    if(open){
+      const dialog = $('#photo-dialog');
+      const image = $('#photo-dialog-image');
+      image.src = open.dataset.photoUrl;
+      image.alt = open.dataset.photoAlt;
+      dialog.showModal();
+      return;
+    }
     const k = e.target.dataset.now; if(!k) return;
     cur()[k] = nowS(); save(sel); rAll();
   });
+  $('#photo-dialog-close').addEventListener('click', () => $('#photo-dialog').close());
+  $('#photo-dialog').addEventListener('close', () => { $('#photo-dialog-image').removeAttribute('src'); });
   $('#excused').addEventListener('change', e => {
     cur().excused = e.target.checked;
     save(sel); rAll();
@@ -300,10 +350,15 @@ function build(){
   $('#mp').onclick = () => setPeriod(-1); $('#mn').onclick = () => setPeriod(1);
   setInterval(() => { if(sel === todayS()){ rDraw(); rList(); } }, 30000);
 }
-function init(){
+async function init(){
   if(started) return; started = true;
-  if(!useFB) days = JSON.parse(localStorage.ponto || '{}');
-  build(); setSel(todayS());
+  try{
+    if(!useFB) days = JSON.parse(localStorage.ponto || '{}');
+    build();
+    await setSel(todayS());
+  }finally{
+    finishStartupLoading();
+  }
 }
 
 /* ---------- login ---------- */
@@ -314,14 +369,16 @@ if(useFB){
     catch(error){ storageError = error; console.error('Falha ao inicializar Firebase Storage:', error); }
   }
   auth.onAuthStateChanged(u => {
-    if(u){ uid = u.uid; $('#auth').hidden = true; init(); } else $('#auth').hidden = false;
+    if(u){ uid = u.uid; $('#auth').hidden = true; init().catch(error => { status('erro ao carregar'); console.error(error); }); }
+    else { $('#auth').hidden = false; finishStartupLoading(); }
   });
   const err = x => $('#ae').textContent = x.message;
   $('#lf').onsubmit = e => { e.preventDefault(); auth.signInWithEmailAndPassword($('#em').value, $('#pw').value).catch(err); };
   $('#cr').onclick = () => auth.createUserWithEmailAndPassword($('#em').value, $('#pw').value).catch(err);
   $('#out').onclick = () => auth.signOut().then(() => location.reload());
 } else {
-  $('#out').hidden = true; init(); status('modo local');
+  $('#out').hidden = true;
+  init().then(() => status('modo local')).catch(error => { status('erro ao carregar'); console.error(error); });
 }
 
 if('serviceWorker' in navigator){

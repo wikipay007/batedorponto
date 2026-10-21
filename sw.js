@@ -1,4 +1,4 @@
-const CACHE = 'ponto-shell-v2';
+const CACHE = 'ponto-shell-v3';
 const SHELL = ['./', './index.html', './ponto.css', './ponto.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {

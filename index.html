@@ -13,6 +13,13 @@
 <link rel="stylesheet" href="ponto.css">
 </head>
 <body>
+<div id="loading-screen" role="status" aria-live="polite" aria-busy="true">
+  <div class="loading-content">
+    <span class="loading-spinner" aria-hidden="true"></span>
+    <p>Carregando seus dados…</p>
+  </div>
+</div>
+
 <div id="auth" hidden>
   <form id="lf">
     <h1>Ponto</h1>
@@ -65,6 +72,14 @@
     <div id="list"></div>
   </section>
 </div>
+
+<dialog id="photo-dialog" aria-labelledby="photo-dialog-title">
+  <div class="photo-dialog-head">
+    <h2 id="photo-dialog-title">Foto da marcação</h2>
+    <button type="button" id="photo-dialog-close" aria-label="Fechar foto">Fechar</button>
+  </div>
+  <img id="photo-dialog-image" alt="">
+</dialog>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>

@@ -63,12 +63,16 @@ input:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 .day-settings .check{display:flex;align-items:center;gap:8px}
 .day-settings .check input{width:20px;min-height:20px;margin:0}
 .day-settings .fld input{max-width:180px;font-size:18px}
+.external-details{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#external-details[hidden]{display:none!important}
+.external-details .fld:first-child{grid-column:1/-1}
+.external-details input{font-size:16px!important}
 .br{display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;margin-bottom:8px}
 .br .n{grid-column:1/3;grid-row:2}
 .br .x{grid-row:1;grid-column:3;padding:0}
 .br .a{grid-row:2;grid-column:3;padding:0;border-color:var(--ln)}
 .sum{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--ln);border:1px solid var(--ln);margin-top:22px}
-@media(min-width:620px){.sum{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:620px){.sum{grid-template-columns:repeat(5,1fr)}}
 .sum div{background:var(--bg);padding:12px}
 .sum small{display:block;color:var(--mut);font-size:13px}
 .sum b{font-size:24px;font-weight:800;letter-spacing:-.02em}
@@ -82,6 +86,7 @@ input:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 .row.on{box-shadow:inset 3px 0 0 var(--fg);padding-left:10px}
 .dl{font-size:13px;color:var(--mut);line-height:1.1}.dl b{display:block;font-size:22px;color:var(--fg)}
 .tt{text-align:right;font-weight:600}.tt small{display:block;color:var(--mut);font-weight:400}
+.event-name{display:block;color:var(--mut);font-size:12px;margin-top:4px}
 #auth{position:fixed;inset:0;background:#000;display:grid;place-items:center;padding:20px;z-index:9}
 #auth[hidden]{display:none}
 #auth form{display:grid;gap:10px;width:100%;max-width:340px}

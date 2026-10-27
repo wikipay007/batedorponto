@@ -59,6 +59,8 @@ function segs(d, isT){
   return r.filter(s => s[1] > s[0]);
 }
 const brks = d => (d.breaks||[]).filter(b => b.s && b.e && m(b.e) > m(b.s)).map(b => [m(b.s), m(b.e)]);
+const externalMinutes = d => d.external && d.externalStart && d.externalEnd && m(d.externalEnd) > m(d.externalStart)
+  ? m(d.externalEnd) - m(d.externalStart) : 0;
 function stats(d, isT){
   const S = segs(d, isT); let w = 0, bk = 0;
   S.forEach(([a,b]) => { w += b-a; brks(d).forEach(([x,y]) => { const o = Math.min(b,y) - Math.max(a,x); if(o > 0) bk += o; }); });
@@ -129,15 +131,27 @@ function rDraw(){
   const d = days[sel] || {}, isT = sel === todayS();
   $('#draw').innerHTML = d.in ? draw(d, isT, 1, range([[d,isT]])) : '<div class="empty">Sem registro neste dia</div>';
   const s = stats(d, isT), diff = s.w - goalHours(d)*60;
-  const c = [['Trabalhado', d.in ? dur(s.w) : '—'],
+  const external = externalMinutes(d);
+  const c = [['Trabalhado', d.in || external ? dur(s.w + external) : '—'],
     d.excused ? ['Saldo','Abonado'] : d.out ? ['Saldo', sgn(diff)] : d.in ? (diff < 0 ? ['Faltam', dur(-diff)] : ['Extra', sgn(diff)]) : ['Saldo','—'],
+    ['Externo', external ? dur(external) : '—'],
     ['Almoço', s.lunch ? dur(s.lunch) : '—'], ['Interrupções', s.bk ? dur(s.bk) : '—']];
   $('#sum').innerHTML = c.map(([a,b]) => `<div><small>${a}</small><b>${b}</b></div>`).join('');
 }
 function rSettings(){
   const d = days[sel] || {};
   $('#excused').checked = !!d.excused;
+  $('#external').checked = !!d.external;
+  setExternalDetailsVisible(!!d.external);
+  $('#external-name').value = d.eventName || '';
+  $('#external-start').value = d.externalStart || '';
+  $('#external-end').value = d.externalEnd || '';
   $('#day-meta').value = goalHours(d);
+}
+function setExternalDetailsVisible(visible){
+  const details = $('#external-details');
+  details.hidden = !visible;
+  details.style.display = visible ? 'grid' : 'none';
 }
 function rFields(){
   const d = days[sel] || {}, marks = [['in','Entrada'],['lunch','Saída almoço'],['back','Volta'],['out','Saída']];
@@ -253,15 +267,16 @@ async function removePhoto(event){
 }
 function rList(){
   const start = period, end = periodEnd(start), T = todayS();
-  const keys = Object.keys(days).filter(k => k >= start && k <= end && (days[k].in || days[k].excused)).sort().reverse();
+  const keys = Object.keys(days).filter(k => k >= start && k <= end && (days[k].in || days[k].excused || days[k].external)).sort().reverse();
   const rg = range(keys.map(k => [days[k], k === T]));
   let tw = 0, ts = 0, h = '';
   keys.forEach(k => {
     const d = days[k], isT = k === T, s = stats(d, isT), dt = parse(k);
+    const external = externalMinutes(d);
     const diff = s.w - goalHours(d)*60;
-    tw += s.w; if(!d.excused && d.out) ts += diff;
-    const total = d.in ? dur(s.w) : 'Abonado';
-    const balance = d.excused ? 'Abonado' : d.out ? sgn(diff) : 'em aberto';
+    tw += s.w + external; if(!d.excused && d.out) ts += diff;
+    const total = d.excused ? 'Abonado' : d.external ? 'Trabalho externo' : d.in ? dur(s.w) : '—';
+    const balance = d.excused ? 'Abonado' : d.external ? (d.eventName ? esc(d.eventName) : 'Evento sem nome') : d.out ? sgn(diff) : 'em aberto';
     h += `<div class="row${k===sel?' on':''}" data-d="${k}"><div class="dl">${dt.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','')}<b>${String(dt.getDate()).padStart(2,'0')}</b></div><div class="mini">${draw(d,isT,0,rg)}</div><div class="tt">${total}<small>${balance}</small></div></div>`;
   });
   $('#list').innerHTML = h || '<p class="mut" style="padding:14px 0">Nenhum registro neste período. Preencha os horários acima.</p>';
@@ -318,6 +333,19 @@ function build(){
   $('#excused').addEventListener('change', e => {
     cur().excused = e.target.checked;
     save(sel); rAll();
+  });
+  $('#external').addEventListener('change', e => {
+    const enabled = e.target.checked;
+    cur().external = enabled;
+    setExternalDetailsVisible(enabled);
+    save(sel); rDraw(); rList();
+  });
+  $('#external-details').addEventListener('change', e => {
+    const field = { 'external-name': 'eventName', 'external-start': 'externalStart', 'external-end': 'externalEnd' }[e.target.id];
+    if(!field) return;
+    const d = cur();
+    e.target.value ? d[field] = e.target.value : delete d[field];
+    save(sel); rDraw(); rList();
   });
   $('#day-meta').addEventListener('change', e => {
     if(!e.target.checkValidity()){ e.target.reportValidity(); return; }

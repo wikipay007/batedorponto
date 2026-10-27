@@ -51,6 +51,24 @@
         <input id="excused" type="checkbox">
         Abonar este dia (feriado, atestado...)
       </label>
+      <label class="check" for="external">
+        <input id="external" type="checkbox">
+        Trabalho externo
+      </label>
+      <div id="external-details" class="external-details" hidden>
+        <div class="fld">
+          <label for="external-name">Nome do evento</label>
+          <input id="external-name" type="text" maxlength="120" placeholder="Ex.: Feira de negócios">
+        </div>
+        <div class="fld">
+          <label for="external-start">Início do trabalho externo</label>
+          <input id="external-start" type="time">
+        </div>
+        <div class="fld">
+          <label for="external-end">Fim do trabalho externo</label>
+          <input id="external-end" type="time">
+        </div>
+      </div>
       <div class="fld">
         <label for="day-meta">Meta diária deste dia (horas)</label>
         <input id="day-meta" type="number" min="0" max="24" step=".25">

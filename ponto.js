@@ -49,6 +49,8 @@ const dur = n => { const s = n<0 ? '−' : ''; n = Math.abs(Math.round(n)); retu
 const sgn = n => (n>0 ? '+' : '') + dur(n);
 const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const goalHours = d => d.targetHours == null ? meta : +d.targetHours;
+const externalRate = key => [0,6].includes(parse(key).getDay()) ? 200 : 150;
+const brl = value => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value);
 
 /* ---------- cálculo ---------- */
 function segs(d, isT){
@@ -143,6 +145,7 @@ function rSettings(){
   $('#excused').checked = !!d.excused;
   $('#external').checked = !!d.external;
   setExternalDetailsVisible(!!d.external);
+  $('#external-day-value').textContent = `Valor deste dia: ${brl(externalRate(sel))}`;
   $('#external-name').value = d.eventName || '';
   $('#external-start').value = d.externalStart || '';
   $('#external-end').value = d.externalEnd || '';
@@ -269,12 +272,13 @@ function rList(){
   const start = period, end = periodEnd(start), T = todayS();
   const keys = Object.keys(days).filter(k => k >= start && k <= end && (days[k].in || days[k].excused || days[k].external)).sort().reverse();
   const rg = range(keys.map(k => [days[k], k === T]));
-  let tw = 0, ts = 0, h = '';
+  let tw = 0, ts = 0, externalTotal = 0, externalCount = 0, h = '';
   keys.forEach(k => {
     const d = days[k], isT = k === T, s = stats(d, isT), dt = parse(k);
     const external = externalMinutes(d);
     const diff = s.w - goalHours(d)*60;
     tw += s.w + external; if(!d.excused && d.out) ts += diff;
+    if(d.external){ externalTotal += externalRate(k); externalCount++; }
     const total = d.excused ? 'Abonado' : d.external ? 'Trabalho externo' : d.in ? dur(s.w) : '—';
     const balance = d.excused ? 'Abonado' : d.external ? (d.eventName ? esc(d.eventName) : 'Evento sem nome') : d.out ? sgn(diff) : 'em aberto';
     h += `<div class="row${k===sel?' on':''}" data-d="${k}"><div class="dl">${dt.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','')}<b>${String(dt.getDate()).padStart(2,'0')}</b></div><div class="mini">${draw(d,isT,0,rg)}</div><div class="tt">${total}<small>${balance}</small></div></div>`;
@@ -282,8 +286,47 @@ function rList(){
   $('#list').innerHTML = h || '<p class="mut" style="padding:14px 0">Nenhum registro neste período. Preencha os horários acima.</p>';
   $('#mh').textContent = `${parse(start).toLocaleDateString('pt-BR')} a ${parse(end).toLocaleDateString('pt-BR')}`;
   $('#mt').innerHTML = `<span><b>${keys.length}</b> dias</span><span><b>${dur(tw)}</b> trabalhadas</span><span>Saldo <b>${sgn(ts)}</b></span><span>Meta diária <input id="meta" type="number" min="1" max="12" step=".25" value="${meta}"> h</span>`;
+  $('#external-period-total').textContent = `${externalCount} ${externalCount === 1 ? 'trabalho externo' : 'trabalhos externos'} neste período · Total: ${brl(externalTotal)}`;
 }
 const rAll = () => { rDraw(); rSettings(); rFields(); rBrk(); rList(); };
+
+function exportReport(externalOnly){
+  const start = period, end = periodEnd(start);
+  const keys = Object.keys(days).filter(k => k >= start && k <= end &&
+    (externalOnly ? days[k].external : (days[k].in || days[k].excused || days[k].external))).sort();
+  const rows = keys.map(k => {
+    const d = days[k], date = parse(k), weekday = date.toLocaleDateString('pt-BR',{weekday:'long'});
+    const external = !!d.external, minutes = externalMinutes(d), rate = external ? externalRate(k) : 0;
+    if(externalOnly){
+      return `<tr><td>${date.toLocaleDateString('pt-BR')}</td><td>${weekday}</td><td>${esc(d.eventName || '—')}</td><td>${d.externalStart || '—'}–${d.externalEnd || '—'}</td><td>${minutes ? dur(minutes) : '—'}</td><td>${brl(rate)}</td></tr>`;
+    }
+    const s = stats(d, k === todayS()), diff = s.w - goalHours(d)*60;
+    const total = d.excused ? 'Abonado' : dur(s.w + minutes);
+    const balance = d.excused ? 'Abonado' : d.out ? sgn(diff) : external && !d.in ? 'Trabalho externo' : 'Em aberto';
+    return `<tr><td>${date.toLocaleDateString('pt-BR')}</td><td>${weekday}</td><td>${d.in || '—'}</td><td>${d.lunch || '—'}</td><td>${d.back || '—'}</td><td>${d.out || '—'}</td><td>${total}</td><td>${balance}</td><td>${external ? esc(d.eventName || 'Sim') : '—'}</td></tr>`;
+  });
+  const totalExternal = keys.reduce((total,k) => total + (days[k].external ? externalRate(k) : 0), 0);
+  const periodLabel = `${parse(start).toLocaleDateString('pt-BR')} a ${parse(end).toLocaleDateString('pt-BR')}`;
+  const title = externalOnly ? 'Relatório de trabalhos externos' : 'Relatório de pontos';
+  const headers = externalOnly
+    ? '<th>Data</th><th>Dia da semana</th><th>Evento</th><th>Horário</th><th>Duração</th><th>Valor</th>'
+    : '<th>Data</th><th>Dia da semana</th><th>Entrada</th><th>Saída almoço</th><th>Volta</th><th>Saída</th><th>Total</th><th>Saldo</th><th>Trabalho externo</th>';
+  const summary = externalOnly
+    ? `<p><strong>${keys.length} dias externos</strong> · Total a receber: <strong>${brl(totalExternal)}</strong></p>`
+    : `<p><strong>${keys.length} dias registrados</strong> · ${keys.filter(k => days[k].external).length} dias de trabalho externo (${brl(totalExternal)})</p>`;
+  const popup = window.open('', '_blank');
+  if(!popup){ status('Não foi possível abrir o relatório. Permita pop-ups e tente novamente.'); return; }
+  popup.document.open();
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${title}</title><style>
+    body{font:12px Arial,sans-serif;color:#111;margin:24px}h1{font-size:20px;margin:0 0 6px}
+    p{margin:8px 0 18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:6px;text-align:left}
+    th{background:#eee}tr{break-inside:avoid}
+    @media print{body{margin:12mm}button{display:none}}
+  </style></head><body><h1>${title}</h1><p>Período: ${periodLabel}</p>${summary}
+  <table><thead><tr>${headers}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="${externalOnly ? 6 : 9}">Nenhum registro neste período.</td></tr>`}</tbody></table>
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),100));<\/script></body></html>`);
+  popup.document.close();
+}
 
 async function setSel(s){
   sel = s; period = periodFor(s); $('#dt').value = s;
@@ -376,6 +419,8 @@ function build(){
   $('#pv').onclick = () => step(-1); $('#nx').onclick = () => step(1);
   $('#hj').onclick = () => setSel(todayS());
   $('#mp').onclick = () => setPeriod(-1); $('#mn').onclick = () => setPeriod(1);
+  $('#export-report').onclick = () => exportReport(false);
+  $('#export-external-report').onclick = () => exportReport(true);
   setInterval(() => { if(sel === todayS()){ rDraw(); rList(); } }, 30000);
 }
 async function init(){

@@ -56,6 +56,7 @@
         Trabalho externo
       </label>
       <div id="external-details" class="external-details" hidden>
+        <p id="external-day-value" class="external-value"></p>
         <div class="fld">
           <label for="external-name">Nome do evento</label>
           <input id="external-name" type="text" maxlength="120" placeholder="Ex.: Feira de negócios">
@@ -87,6 +88,11 @@
       <button id="mn" aria-label="Próximo período">›</button>
     </div>
     <div class="tot" id="mt"></div>
+    <p id="external-period-total" class="external-value"></p>
+    <div class="report-actions">
+      <button id="export-report" type="button">Exportar relatório de pontos em PDF</button>
+      <button id="export-external-report" type="button">Exportar relatório de trabalhos externos em PDF</button>
+    </div>
     <div id="list"></div>
   </section>
 </div>
